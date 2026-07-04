@@ -4350,10 +4350,49 @@ class GeminiAnalyzer:
         """Delegate to module-level apply_placeholder_fill."""
         apply_placeholder_fill(result, missing_fields)
 
+    def _strip_provider_reasoning_from_json_response(self, response_text: str) -> str:
+        """Remove provider reasoning wrappers before strict analysis JSON extraction.
+
+        MiniMax M-series and some reasoning models may prepend `<think>...</think>`
+        content even when the prompt asks for JSON-only output. Treat that wrapper as
+        transport-level reasoning metadata, not as user-visible analysis JSON, while
+        keeping the downstream extractor strict about any other extra prose or multiple
+        JSON candidates.
+        """
+        text = response_text or ""
+        stripped = text.strip()
+        if not stripped:
+            return stripped
+
+        # Common MiniMax/Qwen-style wrapper: <think>...</think>{...}
+        stripped = re.sub(
+            r"^\s*<think>.*?</think>\s*",
+            "",
+            stripped,
+            count=1,
+            flags=re.DOTALL | re.IGNORECASE,
+        ).strip()
+
+        # Some providers stream/return a markdown-ish thinking preface without a
+        # closing tag, followed by the only JSON object/code fence. Only strip when
+        # the remaining prefix contains no JSON delimiter, preserving ambiguity
+        # detection for responses with multiple JSON-like payloads.
+        first_json = stripped.find("{")
+        first_fence = stripped.find("```")
+        candidates = [idx for idx in (first_json, first_fence) if idx >= 0]
+        if candidates:
+            first_payload = min(candidates)
+            prefix = stripped[:first_payload].strip()
+            if prefix and "{" not in prefix and "```" not in prefix:
+                lowered = prefix.lower()
+                if "<think>" in lowered or "thinking" in lowered or "思考" in prefix:
+                    stripped = stripped[first_payload:].strip()
+        return stripped
+
     def _extract_analysis_json_object(self, response_text: str) -> Tuple[str, Dict[str, Any]]:
         """Extract the single allowed JSON object from an LLM response."""
 
-        text = response_text or ""
+        text = self._strip_provider_reasoning_from_json_response(response_text)
         stripped = text.strip()
         if not stripped:
             raise ValueError("empty_response")

@@ -289,6 +289,36 @@ class TestAnalyzerSchemaFallback(unittest.TestCase):
 }
 ```""")
 
+    def test_validate_json_response_strips_minimax_think_prefix(self) -> None:
+        analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
+        analyzer._config_override = SimpleNamespace(generation_backend="litellm")
+
+        analyzer._validate_json_response("""<think>
+我先整理技术面、新闻和风险，再输出 JSON。
+</think>
+{
+  "stock_name": "NVIDIA Corporation",
+  "sentiment_score": 62,
+  "trend_prediction": "震荡偏强",
+  "operation_advice": "观察",
+  "analysis_summary": "MiniMax reasoning wrapper should not make JSON ambiguous"
+}""")
+
+    def test_validate_json_response_strips_minimax_think_prefix_before_fence(self) -> None:
+        analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
+        analyzer._config_override = SimpleNamespace(generation_backend="litellm")
+
+        analyzer._validate_json_response("""<think>reasoning hidden by provider</think>
+```json
+{
+  "stock_name": "Invesco QQQ Trust",
+  "sentiment_score": 50,
+  "trend_prediction": "震荡",
+  "operation_advice": "观察",
+  "analysis_summary": "fenced JSON remains valid after stripping reasoning"
+}
+```""")
+
     def test_validate_json_response_rejects_ambiguous_json_before_repair(self) -> None:
         analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
         analyzer._config_override = SimpleNamespace(generation_backend="litellm")
