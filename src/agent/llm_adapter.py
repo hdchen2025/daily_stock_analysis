@@ -280,7 +280,10 @@ def _get_opt_in_payload(model: str, opt_in: Dict[str, dict]) -> Optional[dict]:
     return None
 
 
-def get_thinking_extra_body(model: str) -> Optional[dict]:
+def get_thinking_extra_body(
+    model: str,
+    thinking_disabled_models: Optional[List[str]] = None,
+) -> Optional[dict]:
     """Return extra_body for thinking mode, or None.
 
     - Auto-thinking models (_AUTO_THINKING_MODELS: deepseek-reasoner, deepseek-r1, qwq):
@@ -289,10 +292,23 @@ def get_thinking_extra_body(model: str) -> Optional[dict]:
       Return None to avoid duplicate activation.
     - Opt-in models (_OPT_IN_THINKING_MODELS: deepseek-chat): Return the activation
       payload to explicitly enable thinking mode.
+    - thinking_disabled_models (config-driven, e.g. GLM under coding plans): Return
+      the explicit disable payload so reasoning tokens stop consuming the output
+      budget and truncating dashboard JSON.
     - All other models: Return None (no thinking mode).
     """
     if _model_matches(model, _AUTO_THINKING_MODELS):
         return None
+    disable_payload = _get_opt_in_payload(
+        model,
+        {
+            str(name).strip().lower(): {"thinking": {"type": "disabled"}}
+            for name in (thinking_disabled_models or [])
+            if str(name or "").strip()
+        },
+    )
+    if disable_payload:
+        return disable_payload
     return _get_opt_in_payload(model, _OPT_IN_THINKING_MODELS)
 
 

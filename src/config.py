@@ -793,6 +793,11 @@ class Config:
     # dashboard JSON at the legacy 8192 default; raise via env when needed.
     llm_analysis_max_output_tokens: int = 8192
 
+    # Opt-in: comma-separated model names whose thinking/reasoning mode should be
+    # explicitly disabled via extra_body (e.g. GLM under coding plans where
+    # reasoning tokens share the output budget and truncate dashboard JSON).
+    llm_thinking_disabled_models: List[str] = field(default_factory=list)
+
     # Legacy single-key fields (kept for backward compatibility; gemini_api_keys[0] when set)
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-3.1-pro-preview"  # 主模型
@@ -1685,6 +1690,11 @@ class Config:
                 field_name="LLM_ANALYSIS_MAX_OUTPUT_TOKENS",
                 minimum=1024,
             ),
+            llm_thinking_disabled_models=[
+                item.strip()
+                for item in (os.getenv("LLM_THINKING_DISABLED_MODELS") or "").split(",")
+                if item.strip()
+            ],
             gemini_api_keys=gemini_api_keys,
             anthropic_api_keys=anthropic_api_keys,
             openai_api_keys=openai_api_keys,
