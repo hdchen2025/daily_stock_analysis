@@ -127,8 +127,10 @@ class YfinanceFetcher(BaseFetcher):
 
         # 美股：1-5 个大写字母（可选 .X 后缀），原样返回
         if is_us_stock_code(code):
-            logger.debug(f"识别为美股代码: {code}")
-            return code
+            # Yahoo Finance uses hyphenated share-class suffixes (BRK.B -> BRK-B)
+            yahoo_code = code.replace('.', '-') if '.' in code else code
+            logger.debug(f"识别为美股代码: {code} -> {yahoo_code}")
+            return yahoo_code
 
         # 日股/韩股/台股 MVP：显式 Yahoo Finance suffix-only 代码，原样传给 Yahoo。
         if self._is_jp_kr_suffix_stock(code) or self._is_tw_suffix_stock(code):
