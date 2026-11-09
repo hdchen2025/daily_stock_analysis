@@ -122,8 +122,25 @@ def render(
     )
     labels = get_report_labels(report_language)
 
-    # Build template context with pre-computed signal levels (sorted by score)
-    sorted_results = sorted(results, key=lambda x: x.sentiment_score, reverse=True)
+    # Build template context with pre-computed signal levels.
+    # Ordering: REPORT_SORT_MODE=input keeps watchlist (STOCK_LIST) order so key
+    # tickers stay on top; default remains score-descending.
+    sort_mode = str(getattr(get_config(), "report_sort_mode", "score") or "score").lower()
+    if sort_mode == "input":
+        stock_order = [
+            str(c or "").strip().upper()
+            for c in (getattr(get_config(), "stock_list", None) or [])
+        ]
+        order_index = {code: i for i, code in enumerate(stock_order)}
+        sorted_results = sorted(
+            results,
+            key=lambda x: (
+                order_index.get(str(x.code or "").strip().upper(), len(stock_order)),
+                -x.sentiment_score,
+            ),
+        )
+    else:
+        sorted_results = sorted(results, key=lambda x: -x.sentiment_score)
     sorted_enriched = []
     for r in sorted_results:
         st, se, _ = get_signal_level(r.operation_advice, r.sentiment_score, report_language)
