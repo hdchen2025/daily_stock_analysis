@@ -229,6 +229,7 @@ class NotificationService(
 
         # 仅分析结果摘要（Issue #262）：true 时只推送汇总，不含个股详情
         self._report_summary_only = getattr(config, 'report_summary_only', False)
+        self._report_sort_mode = str(getattr(config, 'report_sort_mode', 'score') or 'score')
         self._report_show_llm_model = getattr(config, 'report_show_llm_model', True)
         self._history_compare_cache: Dict[Tuple[int, Tuple[Tuple[str, str], ...]], Dict[str, List[Dict[str, Any]]]] = {}
 
@@ -793,6 +794,23 @@ class NotificationService(
 
         return success
 
+    def _sort_report_results(self, results: List[AnalysisResult]) -> List[AnalysisResult]:
+        """Order results for reports.
+
+        score (default): sentiment score descending, as before.
+        input: STOCK_LIST order from runtime config; unknown codes keep
+            score-descending order after the known ones.
+        """
+        if self._report_sort_mode != 'input':
+            return sorted(results, key=lambda x: x.sentiment_score, reverse=True)
+        stock_list = [str(c or '').strip().upper() for c in (getattr(self._config, 'stock_list', None) or [])]
+        index = {code: i for i, code in enumerate(stock_list)}
+        return sorted(
+            results,
+            key=lambda x: (index.get(str(x.code or '').strip().upper(), len(stock_list)),
+                           -x.sentiment_score),
+        )
+
     def generate_daily_report(
         self,
         results: List[AnalysisResult],
@@ -823,12 +841,8 @@ class NotificationService(
         self._append_market_status_line(report_lines, results, report_language)
         report_lines.extend(["---", ""])
 
-        # 按评分排序（高分在前）
-        sorted_results = sorted(
-            results,
-            key=lambda x: x.sentiment_score,
-            reverse=True
-        )
+        # 按配置排序：score（默认，高分在前）或 input（STOCK_LIST 顺序）
+        sorted_results = self._sort_report_results(results)
 
         # 统计信息 - 使用 decision_type 字段准确统计
         buy_count = sum(1 for r in results if getattr(r, 'decision_type', '') == 'buy')
@@ -1156,8 +1170,8 @@ class NotificationService(
         if report_date is None:
             report_date = datetime.now().strftime('%Y-%m-%d')
 
-        # 按评分排序（高分在前）
-        sorted_results = sorted(results, key=lambda x: x.sentiment_score, reverse=True)
+        # 按配置排序：score（默认，高分在前）或 input（STOCK_LIST 顺序）
+        sorted_results = self._sort_report_results(results)
 
         # 统计信息 - 使用 decision_type 字段准确统计
         buy_count = sum(1 for r in results if getattr(r, 'decision_type', '') == 'buy')

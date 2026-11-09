@@ -781,6 +781,18 @@ class Config:
     openai_api_keys: List[str] = field(default_factory=list)
     deepseek_api_keys: List[str] = field(default_factory=list)
 
+    # Opt-in: send response_format={"type": "json_object"} on JSON-contract LLM calls
+    # (calls that carry a response_validator). Helps reasoning models that wrap their
+    # JSON payload in prose despite JSON-only instructions (e.g. GLM, MiniMax).
+    # Providers without OpenAI-style response_format support may reject the param;
+    # the call then fails over per-model as usual, so this stays opt-in.
+    llm_json_response_format_enabled: bool = False
+
+    # Max output tokens for the stock-analysis LLM call. Reasoning models whose
+    # reasoning tokens count against the same budget (e.g. GLM) can truncate long
+    # dashboard JSON at the legacy 8192 default; raise via env when needed.
+    llm_analysis_max_output_tokens: int = 8192
+
     # Legacy single-key fields (kept for backward compatibility; gemini_api_keys[0] when set)
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-3.1-pro-preview"  # 主模型
@@ -950,6 +962,11 @@ class Config:
 
     # 仅分析结果摘要：true 时只推送汇总，不含个股详情（Issue #262）
     report_summary_only: bool = False
+
+    # Report ordering: 'score' (default, high first) or 'input' (STOCK_LIST order).
+    # 'input' keeps the configured watchlist order stable across runs so key
+    # tickers listed first in STOCK_LIST always appear at the top of reports.
+    report_sort_mode: str = "score"
     report_show_llm_model: bool = True
 
     # Report Engine P0: Jinja2 renderer and integrity checks
@@ -1658,6 +1675,16 @@ class Config:
             llm_prompt_cache_diagnostics_level=parse_prompt_cache_diagnostics_level(
                 os.getenv("LLM_PROMPT_CACHE_DIAGNOSTICS_LEVEL")
             ),
+            llm_json_response_format_enabled=parse_env_bool(
+                os.getenv("LLM_JSON_RESPONSE_FORMAT_ENABLED"),
+                default=False,
+            ),
+            llm_analysis_max_output_tokens=parse_env_int(
+                os.getenv("LLM_ANALYSIS_MAX_OUTPUT_TOKENS"),
+                8192,
+                field_name="LLM_ANALYSIS_MAX_OUTPUT_TOKENS",
+                minimum=1024,
+            ),
             gemini_api_keys=gemini_api_keys,
             anthropic_api_keys=anthropic_api_keys,
             openai_api_keys=openai_api_keys,
@@ -1869,6 +1896,9 @@ class Config:
             report_type=cls._parse_report_type(os.getenv('REPORT_TYPE', 'simple')),
             report_language=cls._parse_report_language(report_language_raw),
             report_summary_only=os.getenv('REPORT_SUMMARY_ONLY', 'false').lower() == 'true',
+            report_sort_mode=(os.getenv('REPORT_SORT_MODE', 'score').strip().lower()
+                              if os.getenv('REPORT_SORT_MODE', 'score').strip().lower() in ('score', 'input')
+                              else 'score'),
             report_show_llm_model=report_show_llm_model,
             report_templates_dir=os.getenv('REPORT_TEMPLATES_DIR', 'templates'),
             report_renderer_enabled=os.getenv('REPORT_RENDERER_ENABLED', 'false').lower() == 'true',
