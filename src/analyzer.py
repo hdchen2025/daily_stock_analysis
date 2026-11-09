@@ -3167,6 +3167,14 @@ class GeminiAnalyzer:
                     call_kwargs["timeout"] = requested_timeout
                 if extra:
                     call_kwargs["extra_body"] = extra
+                # Opt-in JSON mode for JSON-contract calls (validator present). Reasoning
+                # models such as GLM may wrap the JSON payload in prose despite
+                # JSON-only instructions; response_format=json_object prevents that.
+                if (
+                    response_validator is not None
+                    and getattr(config, "llm_json_response_format_enabled", False)
+                ):
+                    call_kwargs["response_format"] = {"type": "json_object"}
                 uses_router = (
                     (use_channel_router and self._router and model in router_model_names)
                     or (self._router and model == config.litellm_model and not use_channel_router)
@@ -3533,7 +3541,9 @@ class GeminiAnalyzer:
             # 设置生成配置
             generation_config = {
                 "temperature": config.llm_temperature,
-                "max_output_tokens": 8192,
+                "max_output_tokens": getattr(
+                    config, "llm_analysis_max_output_tokens", 8192
+                ),
             }
 
             logger.info(f"[LLM调用] 开始调用 {model_name}...")
@@ -4443,6 +4453,27 @@ class GeminiAnalyzer:
                 raise
             repaired = self._fix_json_string(stripped)
             data = json.loads(repaired)
+        if isinstance(data, dict):
+            # Some reasoning models (e.g. GLM under json_object mode) wrap the
+            # dashboard payload in a prose-note envelope even for JSON-only
+            # instructions, with unstable key names ("final_json",
+            # "dashboard_json", ...). Unwrap the single nested dashboard
+            # object when the top level itself has no minimal-contract field,
+            # keeping multi-candidate ambiguity detection intact.
+            minimal_keys = {
+                "sentiment_score",
+                "trend_prediction",
+                "operation_advice",
+                "analysis_summary",
+                "dashboard",
+            }
+            if not any(k in data for k in minimal_keys):
+                dict_candidates = [
+                    v for v in data.values() if isinstance(v, dict)
+                    if any(k in v for k in minimal_keys)
+                ]
+                if len(dict_candidates) == 1:
+                    data = dict_candidates[0]
         if not isinstance(data, dict):
             raise TypeError("json_root_not_object")
         return data
